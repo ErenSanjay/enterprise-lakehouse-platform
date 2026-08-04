@@ -1,325 +1,232 @@
-# 05 - Data Architecture
+# 05. Data Architecture
 
-**Project:** Enterprise Lakehouse Platform
+**Project:** Enterprise Hospitality Lakehouse Platform
 
-**Version:** 1.0
+**Document Version:** 1.0
 
 **Author:** Sanjay K J
-
-**Date:** August 2026
 
 ---
 
 # 1. Purpose
 
-This document defines the enterprise data architecture for the Enterprise Lakehouse Platform.
+The purpose of this document is to define the enterprise data architecture for the Hospitality Lakehouse Platform.
 
-It describes how enterprise data is ingested, transformed, governed, and consumed across the platform while ensuring scalability, reliability, performance, and security.
+The platform consolidates operational and analytical data from multiple business systems into a unified Lakehouse built on the Medallion Architecture.
 
-The platform follows the **Medallion Architecture (Bronze, Silver, Gold)** using **Delta Lake** as the storage format.
-
----
-
-# 2. Data Architecture Overview
-
-The platform adopts a layered architecture where data progressively improves in quality and business value.
-
-```text
-Enterprise Sources
-        │
-        ▼
- Landing Zone
-        │
-        ▼
- Bronze Layer
-        │
-        ▼
- Silver Layer
-        │
-        ▼
- Gold Layer
-        │
- ┌──────┴──────────┐
- ▼                 ▼
-Power BI      ML / AI
-```
-
-Each layer has clearly defined responsibilities and ownership.
+The architecture enables reliable reporting, advanced analytics, machine learning, and enterprise-wide data governance while maintaining scalability, data quality, and operational resilience.
 
 ---
 
-# 3. Data Domains
+# 2. Architecture Principles
 
-The platform is organized into business domains.
+The platform is designed around the following principles:
+
+- Single Source of Truth
+- Immutable Raw Data
+- Metadata-Driven Pipelines
+- Incremental Data Processing
+- Data Quality by Design
+- Secure-by-Default Architecture
+- Enterprise Governance
+- Scalable Distributed Processing
+- Domain-Oriented Data Organization
+
+---
+
+# 3. Business Data Domains
+
+The platform organizes data into business domains instead of application-specific systems.
 
 | Domain | Description |
 |----------|-------------|
-| Reservations | Reservation transactions |
-| Inventory | Room inventory |
-| Pricing | Pricing & Rate Programs |
-| Customer | Customer Master |
-| Property | Hotel Metadata |
-| Revenue | Revenue Metrics |
-| Configuration | System Configurations |
-| Audit | Pipeline Audit Logs |
-| Metadata | Pipeline Metadata |
+| Reservations | Hotel reservation transactions |
+| Inventory | Room availability and inventory |
+| Pricing | Pricing recommendations and rate management |
+| Room Configuration | Room types, room pools, bed types, rate programs |
+| Property Master | Hotel metadata and hierarchy |
+| Customer | Guest information |
+| Benchmark | Historical occupancy and pricing benchmarks |
+| Calendar | Holidays, seasons and special events |
+| Audit | Pipeline execution metadata |
+| Metadata | Pipeline configuration and operational metadata |
 
 ---
 
 # 4. Source Systems
 
-| Source | Type | Frequency |
-|----------|------|-----------|
-| CRS | CSV | Daily |
-| MDP | CSV | Daily |
-| Reservation System | Database | Hourly |
-| Inventory API | REST API | Hourly |
-| Pricing Engine | Database | Daily |
-| Historical Benchmark | Delta Table | Daily |
+| Source System | Data Type | Ingestion Method | Frequency | Business Purpose |
+|---------------|-----------|------------------|-----------|------------------|
+| Property Management System (PMS) | Database | JDBC | Hourly | Reservations and occupancy |
+| Central Reservation System (CRS) | CSV / REST API | Auto Loader | Hourly | Reservation transactions |
+| Revenue Management System (RMS) | Database | JDBC | Daily | Pricing recommendations |
+| Channel Manager | REST API | API | Hourly | OTA pricing and inventory |
+| Hotel Configuration System | CSV | Auto Loader | Daily | Room types, room pools, rate programs |
+| Enterprise Master Data | Database | JDBC | Daily | Property and organization master data |
+| Historical Benchmark Repository | Delta Tables | Unity Catalog | Daily | Historical benchmark metrics |
+| External Calendar API | REST API | API | Daily | Holidays and special events |
 
 ---
 
-# 5. Landing Zone
+# 5. Data Ingestion Layer
 
-The Landing Zone stores files exactly as received.
+The ingestion layer is responsible for collecting data from enterprise systems and loading it into the Landing Zone.
 
-## Responsibilities
+Supported ingestion mechanisms include:
 
-- Preserve raw files
-- Capture metadata
-- Validate filenames
-- Detect duplicates
-- Enable replay
+- Databricks Auto Loader
+- JDBC Connectors
+- REST APIs
+- Delta Sharing
+- Batch File Ingestion
+- Streaming (future enhancement)
+
+Each ingestion pipeline captures:
+
+- Source metadata
+- File metadata
+- Processing timestamp
+- Batch identifier
+- Data lineage information
+
+---
+
+# 6. Landing Zone
+
+The Landing Zone stores incoming files exactly as received from source systems.
+
+## Objectives
+
+- Preserve original data
+- Enable replayability
+- Support audit requirements
+- Capture ingestion metadata
+- Isolate ingestion failures
 
 ### Folder Structure
 
 ```text
 landing/
-├── crs/
-├── mdp/
-├── reservation/
+
+├── reservations/
+├── inventory/
 ├── pricing/
-└── inventory/
+├── room_configuration/
+├── property_master/
+├── customer/
+├── benchmark/
+├── calendar/
+└── metadata/
 ```
 
-Files remain immutable.
+Files remain immutable and are never modified after ingestion.
 
 ---
 
-# 6. Bronze Layer
+# 7. Medallion Architecture
 
-## Purpose
+The platform follows the Medallion Architecture.
 
-Stores raw enterprise data in Delta format.
+```text
+Source Systems
+        │
+        ▼
+ Landing
+        │
+        ▼
+ Bronze
+        │
+        ▼
+ Silver
+        │
+        ▼
+ Gold
+        │
+ ┌──────┴────────┐
+ ▼               ▼
+BI Reports     AI / ML
+```
+
+---
+
+# 8. Bronze Layer
+
+The Bronze Layer stores raw enterprise data in Delta format.
 
 ### Characteristics
 
-- Raw
 - Append-only
 - Immutable
 - Source-aligned schema
-- Full history retained
+- Full historical retention
+- Metadata enriched
 
-### Standard Metadata Columns
+Typical metadata columns include:
 
-| Column | Description |
-|----------|-------------|
-| ingestion_timestamp | Pipeline execution time |
-| source_system | Source application |
-| file_name | Original file |
-| load_date | Processing date |
-| batch_id | Pipeline batch identifier |
+- ingestion_timestamp
+- source_system
+- load_date
+- batch_id
+- file_name
 
 ---
 
-# 7. Silver Layer
+# 9. Silver Layer
 
-## Purpose
+The Silver Layer contains validated, standardized, and conformed datasets.
 
-Stores validated and standardized datasets.
-
-### Processing
+Processing activities include:
 
 - Schema validation
-- Data type normalization
+- Data cleansing
 - Duplicate removal
-- Null handling
+- Standardization
 - Business rule validation
+- Null handling
+- Data enrichment
 - Surrogate key generation
-- SCD implementation
+- Slowly Changing Dimension processing
 
-### Characteristics
-
-- Trusted data
-- Enterprise schema
-- Clean datasets
-- Ready for downstream processing
+The Silver Layer serves as the enterprise's trusted data foundation.
 
 ---
 
-# 8. Gold Layer
+# 10. Gold Layer
 
-Business-ready analytical datasets.
+The Gold Layer provides business-ready datasets optimized for analytics and reporting.
 
-Examples:
+Examples include:
 
-- Revenue KPIs
-- Occupancy Metrics
-- Pricing Analytics
-- Executive Reporting
-- ML Features
-
-Consumers:
-
-- Power BI
-- Databricks SQL
-- Machine Learning
-- Data Scientists
-
----
-
-# 9. Unity Catalog Structure
-
-```text
-Enterprise
-
-├── Bronze
-│   ├── reservation
-│   ├── inventory
-│   └── pricing
-│
-├── Silver
-│   ├── reservation
-│   ├── inventory
-│   └── pricing
-│
-└── Gold
-    ├── analytics
-    ├── reporting
-    └── revenue
-```
-
----
-
-# 10. Naming Standards
-
-## Tables
-
-```text
-bronze_reservation
-silver_reservation
-gold_daily_revenue
-```
-
-## Pipelines
-
-```text
-ingest_reservation
-transform_pricing
-build_gold_revenue
-```
-
-## Jobs
-
-```text
-daily_bronze_load
-silver_validation
-gold_reporting
-```
-
----
-
-# 11. Data Modeling Strategy
-
-| Layer | Modeling Strategy |
-|---------|------------------|
-| Bronze | Source-Oriented |
-| Silver | Normalized |
-| Gold | Star Schema |
-
----
-
-# 12. Fact Tables
-
-Examples
+### Fact Tables
 
 - Fact Reservation
 - Fact Revenue
 - Fact Pricing
 - Fact Occupancy
 
-Characteristics
+### Dimension Tables
 
-- Incremental
-- Partitioned
-- Large volume
-- Optimized for analytics
-
----
-
-# 13. Dimension Tables
-
-Examples
-
-- Customer
 - Hotel
 - Room Type
-- Bed Type
 - Rate Program
+- Customer
 - Calendar
-
-Dimensions use surrogate keys.
-
----
-
-# 14. Slowly Changing Dimensions
-
-Supported Strategy:
-
-- SCD Type 2
-
-Standard Columns
-
-- Effective Date
-- Expiration Date
-- Current Flag
-- Version
-
----
-
-# 15. Delta Lake Design
-
-All tables are stored using Delta Lake.
-
-Features:
-
-- ACID Transactions
-- Time Travel
-- MERGE
-- Schema Evolution
-- OPTIMIZE
-- VACUUM
-
----
-
-# 16. Partition Strategy
-
-Primary partition columns:
-
-- Business Date
-- Country
-- Region
 - Market
-- Property
 
-Partitioning follows query access patterns.
+Gold datasets are consumed by:
+
+- Power BI
+- Databricks SQL
+- Machine Learning pipelines
+- Executive dashboards
+- Data Science workloads
 
 ---
 
-# 17. File Formats
+# 11. Data Storage Standards
 
-| Layer | Format |
-|---------|--------|
+| Layer | Storage Format |
+|---------|---------------|
 | Landing | CSV / JSON / Parquet |
 | Bronze | Delta |
 | Silver | Delta |
@@ -327,47 +234,101 @@ Partitioning follows query access patterns.
 
 ---
 
-# 18. Schema Evolution
+# 12. Partition Strategy
 
-Supported
+Large datasets are partitioned using business-friendly attributes.
 
-- Nullable columns
-- Optional attributes
-- Backward-compatible changes
+Primary partition columns include:
 
-Breaking changes require deployment approval.
+- Business Date
+- Country
+- Region
+- Property
+- Market
 
----
-
-# 19. Data Quality Strategy
-
-Validation includes:
-
-- Schema validation
-- Null checks
-- Duplicate detection
-- Referential integrity
-- Range validation
-- Business rule validation
-
-Invalid records are quarantined.
+Partitioning decisions are based on expected query patterns and data volume.
 
 ---
 
-# 20. Metadata Management
+# 13. Incremental Processing Strategy
 
-Managed metadata includes:
+Incremental ingestion minimizes unnecessary data processing.
 
-- Source information
-- Pipeline configuration
-- Watermarks
-- Batch history
-- Audit logs
-- Processing metrics
+Supported strategies include:
+
+- Watermark Processing
+- Merge-based Upserts
+- CDC (future enhancement)
+- Idempotent Processing
+- Incremental Batch Loading
 
 ---
 
-# 21. Data Retention
+# 14. Data Quality Framework
+
+Every pipeline performs automated quality validation.
+
+Validation categories include:
+
+- Schema Validation
+- Null Checks
+- Duplicate Detection
+- Referential Integrity
+- Range Validation
+- Business Rule Validation
+
+Invalid records are redirected to quarantine datasets for investigation.
+
+---
+
+# 15. Metadata Management
+
+Operational metadata captured includes:
+
+- Pipeline Name
+- Batch ID
+- Processing Time
+- Execution Duration
+- Source System
+- Row Counts
+- Validation Results
+- Error Logs
+- Pipeline Status
+
+---
+
+# 16. Data Governance
+
+Governance is implemented using Unity Catalog.
+
+Capabilities include:
+
+- Role-Based Access Control
+- Catalogs
+- Schemas
+- Table Permissions
+- Column-Level Security
+- Row-Level Security
+- Data Lineage
+- Audit Logs
+
+---
+
+# 17. Security
+
+Security controls include:
+
+- Identity-based Authentication
+- Role-Based Authorization
+- Encryption at Rest
+- Encryption in Transit
+- Secret Management
+- Private Networking
+- Audit Logging
+
+---
+
+# 18. Retention Policy
 
 | Layer | Retention |
 |---------|-----------|
@@ -375,11 +336,11 @@ Managed metadata includes:
 | Bronze | Permanent |
 | Silver | Permanent |
 | Gold | Permanent |
-| Audit | 365 Days |
+| Audit Logs | 365 Days |
 
 ---
 
-# 22. Backup and Recovery
+# 19. Backup and Recovery
 
 Recovery mechanisms include:
 
@@ -387,66 +348,61 @@ Recovery mechanisms include:
 - Version History
 - Automated Snapshots
 - Disaster Recovery
-- Multi-environment deployment
+- Multi-Environment Deployment
 
 ---
 
-# 23. Data Lineage
+# 20. Data Lineage
+
+The platform maintains end-to-end lineage from ingestion to consumption.
 
 ```text
 Source Systems
-      │
-      ▼
+        │
+        ▼
 Landing
-      │
-      ▼
+        │
+        ▼
 Bronze
-      │
-      ▼
+        │
+        ▼
 Silver
-      │
-      ▼
+        │
+        ▼
 Gold
-      │
-      ▼
-Power BI / AI
+        │
+ ┌──────┴────────┐
+ ▼               ▼
+Power BI       AI / ML
 ```
 
-Lineage supports governance and impact analysis.
+Lineage enables:
+
+- Impact Analysis
+- Regulatory Compliance
+- Debugging
+- Governance
+- Operational Monitoring
 
 ---
 
-# 24. Future Expansion
+# 21. Future Enhancements
 
-The platform supports future capabilities:
+The architecture is designed to support future capabilities including:
 
-- Real-time Streaming
-- CDC
+- Change Data Capture (CDC)
+- Real-Time Streaming
+- Delta Live Tables
 - Feature Store
-- Data Sharing
 - Data Mesh
 - Vector Search
 - Semantic Layer
-- Multi-cloud Deployment
+- Cross-Cloud Data Sharing
 
 ---
 
-# 25. Design Principles
+# 22. Summary
 
-- Single Source of Truth
-- Immutable Raw Data
-- Layered Processing
-- Metadata-driven Pipelines
-- Idempotent Processing
-- Automated Quality Validation
-- Secure Access Control
-- Enterprise Observability
-- Scalable Architecture
+The Enterprise Hospitality Lakehouse Platform implements a modern Medallion Architecture that separates raw ingestion, standardized processing, and business-ready analytics into clearly defined layers.
 
----
-
-# 26. Summary
-
-The Enterprise Lakehouse Platform follows a modern Medallion Architecture built on Delta Lake.
-
-By separating raw ingestion, validation, business transformation, and analytical consumption into independent layers, the platform delivers high-quality, governed, scalable, and maintainable data products that serve reporting, analytics, and AI workloads.
+The architecture emphasizes scalability, governance, performance, data quality, and maintainability while providing a robust foundation for enterprise reporting, advanced analytics, and AI-driven decision-making.
